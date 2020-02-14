@@ -21,6 +21,7 @@ public abstract class Result<V, E extends Throwable> {
      * @param <E> Error value type
      *
      * @return see above
+     * @throws NullPointerException if value is null
      */
     public static <V, E extends Throwable> Result<V, E> success(V value) {
         return new Success<>(value);
@@ -49,7 +50,7 @@ public abstract class Result<V, E extends Throwable> {
      * @throws NullPointerException if value is null
      */
     public static <V, E extends Throwable> Result<V, E> of(V value) {
-        return new Success<>(value);
+        return success(value);
     }
 
     /**
@@ -64,7 +65,7 @@ public abstract class Result<V, E extends Throwable> {
         if (value != null)
             return of(value);
 
-        return Result.failure(new NullPointerException());
+        return failure(new NullPointerException());
     }
 
     /**
