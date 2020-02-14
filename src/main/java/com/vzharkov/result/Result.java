@@ -1,6 +1,7 @@
 package com.vzharkov.result;
 
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Function;
 
 /**
@@ -8,9 +9,10 @@ import java.util.function.Function;
  * Methods could return Result whenever errors are expected and recoverable.
  *
  * @param <V> Success value type
- * @param <E> Error value type
+ * @param <E> Failure value type
  */
-public abstract class Result<V, E> {
+@SuppressWarnings({"OptionalGetWithoutIsPresent", "unchecked"})
+public abstract class Result<V, E extends Throwable> {
     /**
      * Returns a new Success instance containing the given value.
      *
@@ -20,7 +22,7 @@ public abstract class Result<V, E> {
      *
      * @return see above
      */
-    public static <V, E> Result<V, E> success(final V value) {
+    public static <V, E extends Throwable> Result<V, E> success(V value) {
         return new Success<>(value);
     }
 
@@ -32,47 +34,82 @@ public abstract class Result<V, E> {
      * @param <E> Error value type
      * @return see above
      */
-    public static <V, E> Result<V, E> error(final E error) {
-        return new Error<>(error);
+    public static <V, E extends Throwable> Result<V, E> failure(E error) {
+        return new Failure<>(error);
     }
 
     /**
-     * @return success value if the result is Success.
+     * Returns a new Success instance containing the given value.
+     *
+     * @param value Success value
+     * @param <V> Success value type
+     * @param <E> Error value type
+     *
+     * @return see above
+     * @throws NullPointerException if value is null
      */
-    abstract public V getValue();
+    public static <V, E extends Throwable> Result<V, E> of(V value) {
+        return new Success<>(value);
+    }
 
     /**
-     * @return error value if the result is Error.
+     * Returns an Success with the specified value, if non-null,
+     * otherwise returns Failure with NullPointerException.
+     *
+     * @param value the possibly-null value
+     * @param <V> the type of the value
+     * @return see above
      */
-    abstract public E getError();
+    public static <V> Result<V, ?> ofNullable(V value) {
+        if (value != null)
+            return of(value);
+
+        return Result.failure(new NullPointerException());
+    }
+
+    /**
+     * @return Optional value if the result is Success.
+     */
+    abstract public Optional<V> value();
+
+    /**
+     * @return Optional error if the result is Failure.
+     */
+    abstract public Optional<E> error();
+
+    /**
+     * @return value if the result is Success.
+     * @throws E if result is Failure.
+     */
+    abstract public V get() throws E;
 
     /**
      * @return true if the result is Success.
      */
     public boolean isSuccess() {
-        return null != getValue() && null == getError();
+        return value().isPresent() && !error().isPresent();
     }
 
     /**
-     * @return true if the result is Error.
+     * @return true if the result is Failure.
      */
     public boolean isFailure() {
-        return null != getError() && null == getValue();
+        return !isSuccess();
     }
 
     /**
-     * Maps a Result<V, E> to Result<U, E> by applying a function to a contained Success value,
+     * Maps a Result<V, E> to Result<U, E> by applying a function to a contained Ok value,
      * leaving an Error value untouched.
      *
      * @param mapper The {@link Function} to call with the value of this.
      * @param <U> The new value type.
      * @return see above.
      */
-    public <U> Result<U, E> map(final Function<V, U> mapper) {
+    public <U> Result<U, E> map(Function<V, U> mapper) {
         Objects.requireNonNull(mapper);
 
         if (isSuccess()) {
-            return Result.success(mapper.apply(getValue()));
+             return Result.success(mapper.apply(value().get()));
         }
         return (Result<U, E>)this;
     }
@@ -85,13 +122,26 @@ public abstract class Result<V, E> {
      * @param <F>  The new error type.
      * @return see above.
      */
-    public <F> Result<V, F> mapError(final Function<E, F> mapper) {
+    public <F extends Throwable> Result<V, F> mapError(Function<E, F> mapper) {
         Objects.requireNonNull(mapper);
 
         if (isFailure()) {
-            return Result.error(mapper.apply(getError()));
+            return Result.failure(mapper.apply(error().get()));
         }
         return (Result<V, F>)this;
+    }
+
+    /**
+     * Returns Result with new value if the result is Success, otherwise returns this.
+     *
+     * @param result The result.
+     * @param <U> The new value type.
+     * @return see above.
+     */
+    public <U> Result<U, E> and(Result<U, E> result) {
+        Objects.requireNonNull(result);
+
+        return isFailure() ? (Result<U, E>)this : result;
     }
 
     /**
@@ -102,80 +152,97 @@ public abstract class Result<V, E> {
      * @param <U> The new value type.
      * @return see above.
      */
-    public <U> Result<U, E> andThen(final Function<V, Result<U, E>> op) {
+    public <U> Result<U, E> andThen(Function<V, Result<U, E>> op) {
         Objects.requireNonNull(op);
 
-        if (isFailure()) {
-            return (Result<U, E>)this;
-        }
-
-        return op.apply(getValue());
+        return isFailure() ? (Result<U, E>)this : op.apply(value().get());
     }
 
-    @Override
-    public String toString() {
-        if (isSuccess()) {
-            return getValue().toString();
-        }
-        return  "Error: " + getError().toString();
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o)
-            return true;
-
-        if (o == null || getClass() != o.getClass())
-            return false;
-
-        Result result = (Result<?,?>)o;
-        if (isSuccess())
-            return getValue().equals(result.getValue());
-
-        return getError().equals(result.getError());
-    }
-
-    @Override
-    public int hashCode() {
-        if (isSuccess())
-            return getValue().hashCode();
-
-        return getError().hashCode();
-    }
-
-    public static final class Success<V, E> extends Result<V, E>  {
+    public static final class Success<V, E extends Throwable> extends Result<V, E>  {
         private final V value;
 
         private Success(V value) {
-            this.value = value;
+            this.value = Objects.requireNonNull(value, () -> "Value cannot be null");
         }
 
         @Override
-        public V getValue() {
+        public Optional<V> value() {
+            return Optional.of(value);
+        }
+
+        @Override
+        public Optional<E> error() {
+            return Optional.empty();
+        }
+
+        @Override
+        public V get() throws E {
             return value;
         }
 
         @Override
-        public E getError() {
-            return null;
-        }
-   }
+        public boolean equals(Object o) {
+            if (this == o)
+                return true;
+            if (o == null || getClass() != o.getClass())
+                return false;
 
-    public static final class Error<V, E> extends Result<V, E>  {
+            Success<?, ?> success = (Success<?, ?>)o;
+            return value.equals(success.value);
+        }
+
+        @Override
+        public int hashCode() {
+            return value.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "[Success: value=" + value + ']';
+        }
+    }
+
+    public static final class Failure<V, E extends Throwable> extends Result<V, E>  {
         private final E error;
 
-        private Error(E error) {
-            this.error = error;
+        private Failure(E error) {
+            this.error = Objects.requireNonNull(error, () -> "Error cannot be null");;
         }
 
         @Override
-        public V getValue() {
-            return null;
+        public Optional<V> value() {
+            return Optional.empty();
         }
 
         @Override
-        public E getError() {
-            return error;
+        public Optional<E> error() {
+            return Optional.of(error);
+        }
+
+        @Override
+        public V get() throws E {
+            throw error;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o)
+                return true;
+            if (o == null || getClass() != o.getClass())
+                return false;
+
+            Failure<?, ?> failure = (Failure<?, ?>)o;
+            return error.equals(failure.error);
+        }
+
+        @Override
+        public int hashCode() {
+            return error.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "[Failure: error=" + error + ']';
         }
     }
 }
