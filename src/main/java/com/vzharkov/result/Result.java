@@ -2,148 +2,144 @@ package com.vzharkov.result;
 
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.Callable;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * Result is a type that represents either success or failure.
  * Methods could return Result whenever errors are expected and recoverable.
  *
  * @param <V> Success value type
- * @param <E> Failure value type
  */
-@SuppressWarnings({"OptionalGetWithoutIsPresent", "unchecked"})
-public abstract class Result<V, E extends Throwable> {
+@SuppressWarnings({"unchecked"})
+public abstract class Result<V> {
+    protected Result() {}
+
     /**
      * Returns a new Success instance containing the given value.
      *
      * @param value Success value
      * @param <V> Success value type
-     * @param <E> Error value type
      *
      * @return see above
-     * @throws NullPointerException if value is null
      */
-    public static <V, E extends Throwable> Result<V, E> success(V value) {
+    public static <V> Result<V> success(V value) {
         return new Success<>(value);
     }
 
     /**
-     * Returns a new Error instance containing the given value.
+     * Returns a new Failure instance containing the given Throwable.
      *
-     * @param error Error value
+     * @param t Throwable
      * @param <V> Success value type
-     * @param <E> Error value type
+     *
      * @return see above
      */
-    public static <V, E extends Throwable> Result<V, E> failure(E error) {
-        return new Failure<>(error);
+    public static <V> Result<V> failure(Throwable t) {
+        return new Failure<>(t);
     }
 
     /**
-     * Returns a new Success instance containing the given value.
+     * Returns a new Failure instance containing the given error message.
      *
-     * @param value Success value
+     * @param message Error message
      * @param <V> Success value type
-     * @param <E> Error value type
      *
      * @return see above
-     * @throws NullPointerException if value is null
      */
-    public static <V, E extends Throwable> Result<V, E> of(V value) {
-        return success(value);
+    public static <V> Result<V> failure(String message) {
+        return failure(new IllegalStateException(message));
     }
 
     /**
-     * Returns an Success with the specified value, if non-null,
-     * otherwise returns Failure with NullPointerException.
+     * Returns an Success with the specified value,
+     * otherwise returns Failure with Throwable.
      *
-     * @param value the possibly-null value
+     * @param fn a computation that might throw an exception
      * @param <V> the type of the value
+     *
      * @return see above
      */
-    public static <V> Result<V, ?> ofNullable(V value) {
-        if (value != null)
-            return of(value);
+    public static <V> Result<V> attempt(Supplier<V> fn) {
+        Objects.requireNonNull(fn);
 
-        return failure(new NullPointerException());
+        try {
+            return success(fn.get());
+        } catch (Throwable t) {
+            return failure(t);
+        }
     }
 
     /**
-     * @return Optional value if the result is Success.
+     * Returns an Success with the specified value,
+     * otherwise returns Failure with Exception.
+     *
+     * @param fn a computation that might throw an exception
+     * @param <V> the type of the value
+     *
+     * @return see above
      */
-    abstract public Optional<V> value();
+    public static <V> Result<V> call(Callable<V> fn) {
+        Objects.requireNonNull(fn);
 
-    /**
-     * @return Optional error if the result is Failure.
-     */
-    abstract public Optional<E> error();
+        V v;
+        try {
+            v = fn.call();
+        } catch (Exception e) {
+            return failure(e);
+        }
+        return success(v);
+    }
 
     /**
      * @return value if the result is Success.
-     * @throws E if result is Failure.
      */
-    abstract public V get() throws E;
+    protected abstract V value();
+
+    /**
+     * @return error if the result is Failure.
+     */
+    protected abstract Throwable error();
+
+    /**
+     * @return value if the result is Success.
+     * @throws RuntimeException if result is Failure.
+     */
+    protected abstract V get();
 
     /**
      * @return true if the result is Success.
      */
-    public boolean isSuccess() {
-        return value().isPresent() && !error().isPresent();
-    }
+    protected abstract boolean isSuccess();
 
     /**
      * @return true if the result is Failure.
      */
-    public boolean isFailure() {
-        return !isSuccess();
-    }
+    protected abstract boolean isFailure();
 
     /**
-     * Maps a Result<V, E> to Result<U, E> by applying a function to a contained Ok value,
+     * @return Result wrapped in Optional of nullable
+     */
+    protected abstract Optional<V> toOptional();
+
+    /**
+     * Returns the given value if this is a Failure otherwise return this Success.
+     *
+     * @param value the value
+     * @return value  or the result of this Success
+     */
+    protected abstract V getOrElse(V value);
+
+    /**
+     * Maps a Result<V> to Result<U> by applying a function to a contained Success value,
      * leaving an Error value untouched.
      *
      * @param mapper The {@link Function} to call with the value of this.
      * @param <U> The new value type.
      * @return see above.
      */
-    public <U> Result<U, E> map(Function<V, U> mapper) {
-        Objects.requireNonNull(mapper);
-
-        if (isSuccess()) {
-             return Result.success(mapper.apply(value().get()));
-        }
-        return (Result<U, E>)this;
-    }
-
-    /**
-     * Maps a Result<V, E> to Result<V, F> by applying a function to a contained Error value,
-     * leaving an Success value untouched.
-     *
-     * @param mapper The {@link Function} to call with the error of this.
-     * @param <F>  The new error type.
-     * @return see above.
-     */
-    public <F extends Throwable> Result<V, F> mapError(Function<E, F> mapper) {
-        Objects.requireNonNull(mapper);
-
-        if (isFailure()) {
-            return Result.failure(mapper.apply(error().get()));
-        }
-        return (Result<V, F>)this;
-    }
-
-    /**
-     * Returns Result with new value if the result is Success, otherwise returns this.
-     *
-     * @param result The result.
-     * @param <U> The new value type.
-     * @return see above.
-     */
-    public <U> Result<U, E> and(Result<U, E> result) {
-        Objects.requireNonNull(result);
-
-        return isFailure() ? (Result<U, E>)this : result;
-    }
+    protected abstract <U> Result<U> map(Function<? super V, ? extends U> mapper);
 
     /**
      * If this is an Success value andThen() returns the Result of the given {@link Function},
@@ -153,32 +149,70 @@ public abstract class Result<V, E extends Throwable> {
      * @param <U> The new value type.
      * @return see above.
      */
-    public <U> Result<U, E> andThen(Function<V, Result<U, E>> op) {
-        Objects.requireNonNull(op);
+    protected abstract <U> Result<U> andThen(Function<? super V, Result<U>> op);
 
-        return isFailure() ? (Result<U, E>)this : op.apply(value().get());
-    }
-
-    public static final class Success<V, E extends Throwable> extends Result<V, E>  {
+    public static final class Success<V> extends Result<V>  {
         private final V value;
 
         private Success(V value) {
-            this.value = Objects.requireNonNull(value, () -> "Value cannot be null");
+            this.value = value;
         }
 
         @Override
-        public Optional<V> value() {
-            return Optional.of(value);
-        }
-
-        @Override
-        public Optional<E> error() {
-            return Optional.empty();
-        }
-
-        @Override
-        public V get() throws E {
+        public V value() {
             return value;
+        }
+
+        @Override
+        public Throwable error() {
+            return null;
+        }
+
+        @Override
+        public V get() {
+            return value;
+        }
+
+        @Override
+        public boolean isSuccess() {
+            return true;
+        }
+
+        @Override
+        public boolean isFailure() {
+            return false;
+        }
+
+        @Override
+        public Optional<V> toOptional() {
+            return Optional.ofNullable(value);
+        }
+
+        @Override
+        public V getOrElse(V value) {
+            return value();
+        }
+
+        @Override
+        public <U> Result<U> map(Function<? super V, ? extends U> mapper) {
+            Objects.requireNonNull(mapper);
+
+            try {
+                return success(mapper.apply(value));
+            } catch (Throwable t) {
+                return failure(t);
+            }
+        }
+
+        @Override
+        public <U> Result<U> andThen(Function<? super V, Result<U>> op) {
+            Objects.requireNonNull(op);
+
+            try {
+                return op.apply(value());
+            } catch (Throwable t) {
+                return failure(t);
+            }
         }
 
         @Override
@@ -188,7 +222,8 @@ public abstract class Result<V, E extends Throwable> {
             if (o == null || getClass() != o.getClass())
                 return false;
 
-            Success<?, ?> success = (Success<?, ?>)o;
+            Success<?> success = (Success<?>) o;
+
             return value.equals(success.value);
         }
 
@@ -203,26 +238,60 @@ public abstract class Result<V, E extends Throwable> {
         }
     }
 
-    public static final class Failure<V, E extends Throwable> extends Result<V, E>  {
-        private final E error;
+    public static final class Failure<V> extends Result<V>  {
+        private final Throwable error;
 
-        private Failure(E error) {
-            this.error = Objects.requireNonNull(error, () -> "Error cannot be null");;
+        private Failure(Throwable error) {
+            this.error = error;
         }
 
         @Override
-        public Optional<V> value() {
+        public V value() {
+            return null;
+        }
+
+        @Override
+        public Throwable error() {
+            return error;
+        }
+
+        @Override
+        public V get() {
+            if (error instanceof RuntimeException) {
+                throw (RuntimeException) error;
+            }
+
+            throw new RuntimeException(error);
+        }
+
+        @Override
+        public boolean isSuccess() {
+            return false;
+        }
+
+        @Override
+        public boolean isFailure() {
+            return true;
+        }
+
+        @Override
+        public Optional<V> toOptional() {
             return Optional.empty();
         }
 
         @Override
-        public Optional<E> error() {
-            return Optional.of(error);
+        public V getOrElse(V value) {
+            return value;
         }
 
         @Override
-        public V get() throws E {
-            throw error;
+        public <U> Result<U> map(Function<? super V, ? extends U> mapper) {
+            return (Result<U>) this;
+        }
+
+        @Override
+        public <U> Result<U> andThen(Function<? super V, Result<U>> op) {
+            return  (Result<U>) this;
         }
 
         @Override
@@ -232,7 +301,8 @@ public abstract class Result<V, E extends Throwable> {
             if (o == null || getClass() != o.getClass())
                 return false;
 
-            Failure<?, ?> failure = (Failure<?, ?>)o;
+            Failure<?> failure = (Failure<?>) o;
+
             return error.equals(failure.error);
         }
 

@@ -2,137 +2,165 @@ package com.vzharkov.result;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
 
-@SuppressWarnings("OptionalGetWithoutIsPresent")
 class ResultTest {
 
     @Test
     void successShouldReturnValue() {
-        Result<String, Throwable> result = Result.success("test");
+        Result<String> result = Result.success("test");
 
         assertTrue(result.isSuccess());
-        assertTrue(result.value().isPresent());
-        assertNotNull(result.value().get());
-    }
-
-    @Test
-    void successShouldReturnItsValue() throws Throwable {
-        Result<String, Throwable> result = Result.success("test");
-        assertEquals("test", result.get());
+        assertNotNull(result.value());
+        assertEquals("test", result.value());
     }
 
     @Test
     void failureShouldReturnError() {
-        Result<String, Throwable> result = Result.failure(new Throwable());
+        Result<?> result = Result.failure(new Throwable());
 
         assertTrue(result.isFailure());
-        assertTrue(result.error().isPresent());
-        assertNotNull(result.error().get());
+        assertNotNull(result.error());
     }
 
     @Test
-    void failureShouldThrowItsErrorWhenGet() {
-        Result<String, Throwable> result = Result.failure(new Throwable());
+    void failureShouldReturnErrorWhenMessageIsGiven() {
+        Result<?> result = Result.failure("Error message");
+
+        assertTrue(result.isFailure());
+        assertNotNull(result.error());
+    }
+
+    @Test
+    void successShouldReturnValueWhenGet() {
+        Result<String> result = Result.success("test");
+
+        assertTrue(result.isSuccess());
+        assertEquals("test", result.get());
+    }
+
+    @Test
+    void failureShouldThrowErrorWhenGet() {
+        Result<?> result = Result.failure(new Throwable());
+
+        assertTrue(result.isFailure());
         assertThrows(Throwable.class, result::get);
     }
 
     @Test
-    void ofShouldReturnSuccessWhenValueIsNotNull() {
-        Result<String, Throwable> result = Result.of("test");
+    void attemptShouldReturnSuccessWhenSupplierReturnsValue() {
+        Result<String> result = Result.attempt(() -> "test");
 
         assertTrue(result.isSuccess());
-        assertTrue(result.value().isPresent());
-        assertEquals("test", result.value().get());
+        assertEquals("test", result.value());
     }
 
     @Test
-    void ofShouldThrowWhenValueIsNull() {
-        assertThrows(Throwable.class, () -> {
-            Result<String, Throwable> result =Result.of(null);
-        });
-    }
-
-    @Test
-    void ofNullableShouldReturnSuccessWhenValueIsNotNull() {
-        Result<String, ? extends Throwable> result = Result.ofNullable("test");
-
-        assertTrue(result.isSuccess());
-        assertTrue(result.value().isPresent());
-        assertEquals("test", result.value().get());
-    }
-
-    @Test
-    void ofNullableShouldReturnFailureWhenValueIsNull() {
-        Result<String, ? extends Throwable> result = Result.ofNullable(null);
+    void attemptShouldReturnFailureWhenSupplierThrows() {
+        Result<Integer> result = Result.attempt(() -> Integer.valueOf("abc"));
 
         assertTrue(result.isFailure());
-        assertTrue(result.error().isPresent());
+        assertNotNull(result.error());
+    }
+
+    @Test
+    void callShouldReturnSuccessWhenSupplierReturnsValue() {
+        Result<String> result = Result.call(() -> "test");
+
+        assertTrue(result.isSuccess());
+        assertEquals("test", result.value());
+    }
+
+    @Test
+    void callShouldReturnFailureWhenSupplierThrows() {
+        Result<Integer> result = Result.call(() -> Integer.valueOf("abc"));
+
+        assertTrue(result.isFailure());
+        assertNotNull(result.error());
+    }
+
+    @Test
+    void successShouldReturnNonEmptyOptional() {
+        Result<Integer> result = Result.success(5);
+
+        assertNotEquals(result.toOptional(), Optional.empty());
+    }
+
+    @Test
+    void failureShouldReturnEmptyOptional() {
+        Result<?> result = Result.failure(new Throwable());
+
+        assertEquals(result.toOptional(), Optional.empty());
+    }
+
+    @Test
+    void successShouldReturnItsValueWhenGetOrElse() {
+        Result<Integer> result = Result.success(5);
+        Integer i = result.getOrElse(6);
+
+        assertEquals(result.value(), i);
+    }
+
+    @Test
+    void failureShouldReturnGivenValueWhenGetOrElse() {
+        Result<Integer> result = Result.failure(new Throwable());
+        Integer i = result.getOrElse(7);
+
+        assertEquals(Integer.valueOf(7), i);
     }
 
     @Test
     void mapShouldReturnSuccessWhenItsAnSuccess() {
-        Result<Integer, Throwable> result1 = Result.success(5);
-        Result<String, Throwable> result2 = result1.map(v -> Integer.toString(v));
+        Result<Integer> result1 = Result.success(5);
+        Result<String> result2 = result1.map(v -> Integer.toString(v));
 
         assertTrue(result2.isSuccess());
-        assertEquals("5", result2.value().get());
+        assertEquals("5", result2.value());
     }
 
     @Test
     void mapShouldReturnFailureWhenItsAnFailure() {
-        Result<Integer, Throwable> result1 = Result.failure(new Throwable());
-        Result<String, Throwable> result2 = result1.map(v -> Integer.toString(v));
+        Result<Integer> result1 = Result.failure(new Throwable());
+        Result<String> result2 = result1.map(v -> Integer.toString(v));
 
         assertTrue(result2.isFailure());
-        assertEquals(result1.error().get(), result2.error().get());
+        assertEquals(result1.error(), result2.error());
     }
 
     @Test
     void mapShouldNotCallMapperWhenItsAnFailure() {
-        Result<Integer, Throwable> result = Result.failure(new Throwable());
+        Result<?> result = Result.failure(new Throwable());
         result.map(v -> {
             throw new RuntimeException("should not have been called!");
         });
     }
 
     @Test
-    void mapErrorShouldReturnFailureWhenItsAnFailure() {
-        Result<Integer, Throwable> result1 = Result.failure(new Throwable());
-        Result<Integer, Exception> result2 = result1.mapError(Exception::new);
+    void mapShouldReturnFailureWhenMapperThrows() {
+        Result<String> result1 = Result.success("abc");
+        Result<Integer> result2 = result1.map(Integer::valueOf);
 
         assertTrue(result2.isFailure());
-        assertEquals(result1.error().get(), result2.error().get().getCause());
-    }
-
-    @Test
-    void mapErrorShouldReturnSuccessWhenItsAnSuccess() throws Exception {
-        Result<String, Throwable> result1 = Result.success("10");
-        Result<String, Exception> result2 = result1.mapError(Exception::new);
-
-        assertTrue(result2.isSuccess());
-        assertEquals("10", result2.get());
-    }
-
-    @Test
-    void andShouldReturnResultWhenItsAnSuccess() {
-        Result<Integer, Throwable> result1 = Result.success(5);
-        Result<String, Throwable> result2 = result1.and(Result.success("test"));
-
-        assertNotNull(result2);
-
-        assertTrue(result2.isSuccess());
-        assertEquals("test", result2.value().get());
+        assertNotNull(result2.error());
     }
 
     @Test
     void andThenShouldReturnResultWhenItsAnSuccess() {
-        Result<Integer, Throwable> result1 = Result.success(5);
-        Result<String, Throwable> result2 = result1.andThen(v -> Result.success(Integer.toString(v)));
-
-        assertNotNull(result2);
+        Result<Integer> result1 = Result.success(5);
+        Result<String> result2 = result1.andThen(v -> Result.success(Integer.toString(v)));
 
         assertTrue(result2.isSuccess());
-        assertEquals("5", result2.value().get());
+        assertEquals("5", result2.value());
+    }
+
+    @Test
+    void mapShouldReturnFailureWhenOpThrows() {
+        Result<String> result1 = Result.success("abc");
+        Result<Integer> result2 = result1.andThen(v -> Result.success(Integer.valueOf(v)));
+
+        assertTrue(result2.isFailure());
+        assertNotNull(result2.error());
     }
 }
